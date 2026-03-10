@@ -174,6 +174,24 @@ func (n *network) configure(ctx context.Context, table nftables.Table, conf fire
 			})
 		}
 
+		// Protect the bridge gateway address from external access. Drop packets
+		// destined to the gateway IP that arrive from interfaces other than the
+		// bridge itself or loopback.
+		if conf.GatewayIP.IsValid() {
+			gwIP := conf.GatewayIP.String()
+			family := string(table.Family())
+			tm.Create(nftables.Rule{
+				Chain: rawPreroutingChain,
+				Group: initialRuleGroup,
+				Rule: []string{
+					"iifname !=", n.config.IfName,
+					"iifname != lo",
+					family, "daddr", gwIP,
+					`counter drop comment "GATEWAY DROP EXTERNAL"`,
+				},
+			})
+		}
+
 		// ICMP
 		if conf.Routed {
 			rule := "ip protocol icmp"

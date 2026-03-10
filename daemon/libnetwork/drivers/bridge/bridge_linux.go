@@ -477,6 +477,7 @@ func makeNetworkConfigFam(hostIP net.IP, bridgePrefix *net.IPNet, gwm gwMode) (f
 			return firewaller.NetworkConfigFam{}, fmt.Errorf("invalid bridge prefix for pktFilter %s", bridgePrefix)
 		}
 		c.Prefix = p.Masked()
+		c.GatewayIP = p.Addr()
 	}
 	return c, nil
 }

@@ -64,6 +64,10 @@ type NetworkConfigFam struct {
 	HostIP netip.Addr
 	// Prefix is the bridge network's subnet.
 	Prefix netip.Prefix
+	// GatewayIP is the bridge's own IP address (the host-side address on the bridge).
+	// It is used to restrict direct access to the host's bridge address from external
+	// hosts that may have a route to it.
+	GatewayIP netip.Addr
 	// Routed is true if containers should be directly addressable, no NAT from the host.
 	Routed bool
 	// Unprotected is true if no rules to filter unpublished ports or direct access from

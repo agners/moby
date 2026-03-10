@@ -97,6 +97,13 @@ func (n *network) setupIPTables(ctx context.Context, ipVersion iptables.IPVersio
 			return n.setupNonInternalNetworkRules(ctx, ipVersion, config, false)
 		})
 
+		if err := n.setGatewayProtection(ctx, ipVersion, config, true); err != nil {
+			return fmt.Errorf("Failed to setup gateway protection: %w", err)
+		}
+		n.registerCleanFunc(func() error {
+			return n.setGatewayProtection(ctx, ipVersion, config, false)
+		})
+
 		if err := deleteLegacyFilterRules(ipVersion, n.config.IfName); err != nil {
 			return fmt.Errorf("failed to delete legacy rules in filter-FORWARD: %w", err)
 		}
@@ -358,6 +365,33 @@ func (n *network) setupNonInternalNetworkRules(ctx context.Context, ipVer iptabl
 	}
 
 	return nil
+}
+
+// setGatewayProtection drops packets addressed directly to the bridge's own gateway
+// address from interfaces other than the bridge or loopback. This prevents external
+// hosts that have a route to the bridge subnet from accessing services on the host
+// bound to the bridge's gateway address.
+//
+// It is a no-op if:
+//   - the gateway IP is not set.
+//   - "raw" rules are disabled.
+func (n *network) setGatewayProtection(ctx context.Context, ipv iptables.IPVersion, config firewaller.NetworkConfigFam, enable bool) error {
+	if rawRulesDisabled(ctx) || !config.GatewayIP.IsValid() {
+		return nil
+	}
+	gwIP := config.GatewayIP.String()
+	// Accept loopback traffic to the gateway address (host-local access).
+	loAccept := iptables.Rule{IPVer: ipv, Table: iptables.Raw, Chain: "PREROUTING", Args: []string{
+		"-d", gwIP, "-i", "lo", "-j", "ACCEPT",
+	}}
+	if err := appendOrDelChainRule(loAccept, "GATEWAY PROTECTION - ACCEPT LO", enable); err != nil {
+		return err
+	}
+	// Drop traffic from any other non-bridge interface to the gateway address.
+	extDrop := iptables.Rule{IPVer: ipv, Table: iptables.Raw, Chain: "PREROUTING", Args: []string{
+		"-d", gwIP, "!", "-i", n.config.IfName, "-j", "DROP",
+	}}
+	return appendOrDelChainRule(extDrop, "GATEWAY PROTECTION - DROP", enable)
 }
 
 func setIcc(ctx context.Context, version iptables.IPVersion, bridgeIface string, iccEnable, internal, insert bool) error {
