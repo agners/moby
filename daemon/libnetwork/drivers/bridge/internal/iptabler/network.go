@@ -387,6 +387,15 @@ func (n *network) setGatewayProtection(ctx context.Context, ipv iptables.IPVersi
 	if err := appendOrDelChainRule(loAccept, "GATEWAY PROTECTION - ACCEPT LO", enable); err != nil {
 		return err
 	}
+	// Accept traffic from trusted interfaces (e.g. flannel.1 in VXLAN setups).
+	for _, ifName := range n.config.TrustedHostInterfaces {
+		accept := iptables.Rule{IPVer: ipv, Table: iptables.Raw, Chain: "PREROUTING", Args: []string{
+			"-d", gwIP, "-i", ifName, "-j", "ACCEPT",
+		}}
+		if err := appendOrDelChainRule(accept, "GATEWAY PROTECTION - ACCEPT TRUSTED", enable); err != nil {
+			return err
+		}
+	}
 	// Drop traffic from any other non-bridge interface to the gateway address.
 	extDrop := iptables.Rule{IPVer: ipv, Table: iptables.Raw, Chain: "PREROUTING", Args: []string{
 		"-d", gwIP, "!", "-i", n.config.IfName, "-j", "DROP",
